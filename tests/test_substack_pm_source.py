@@ -11,6 +11,10 @@ from src.sources.substack_pm import SubstackPMSource
 SAMPLE_HTML = (Path(__file__).parent / "fixtures" / "substack_sample.html").read_text()
 
 
+def _ms(iso_str: str) -> int:
+    return int(datetime.fromisoformat(iso_str).timestamp() * 1000)
+
+
 def _gmail_message(msg_id: str, subject: str, from_addr: str, html: str = SAMPLE_HTML, internal_date: str = "1700000000000") -> dict:
     return {
         "id": msg_id,
@@ -181,7 +185,14 @@ class TestMarkProcessed:
             "seen_message_ids": ["old1", "old2"],
             "retention_days": 30,
         }))
-        mock_fetch.return_value = [_gmail_message("new1", "X", "x@substack.com")]
+        mock_fetch.return_value = [
+            _gmail_message(
+                "new1",
+                "X",
+                "x@substack.com",
+                internal_date=str(_ms("2026-04-02T00:00:00+00:00")),
+            ),
+        ]
         src = SubstackPMSource(seen_file_path=state_path)
         src.fetch()
         src.mark_processed()
