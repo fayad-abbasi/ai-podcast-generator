@@ -1,5 +1,5 @@
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
 
@@ -79,12 +79,45 @@ class TestFetch:
         assert items[0]["title"] == "Build vs Buy Trap"
 
     @patch("src.sources.substack_pm.fetch_messages")
-    def test_uses_substack_gmail_query(self, mock_fetch, state_path):
+    def test_first_run_uses_since_days_query(self, mock_fetch, state_path):
         mock_fetch.return_value = []
         SubstackPMSource(seen_file_path=state_path).fetch(since_days=14)
         query = mock_fetch.call_args.args[0]
         assert "label:Substack/PM" in query
         assert "newer_than:14d" in query
+
+    @patch("src.sources.substack_pm.fetch_messages")
+    def test_after_first_run_uses_last_run_query(self, mock_fetch, state_path):
+        state_path.write_text(json.dumps({
+            "last_run_utc": "2026-05-22T09:49:35+00:00",
+            "seen_message_ids": [],
+            "retention_days": 30,
+        }))
+        mock_fetch.return_value = []
+
+        SubstackPMSource(seen_file_path=state_path).fetch(since_days=14)
+
+        query = mock_fetch.call_args.args[0]
+        assert "label:Substack/PM" in query
+        assert "after:2026/05/21" in query
+        assert "newer_than:" not in query
+
+    @patch("src.sources.substack_pm.fetch_messages")
+    def test_filters_messages_before_last_run_precisely(self, mock_fetch, state_path):
+        cutoff_ms = 1779443375000  # 2026-05-22T09:49:35+00:00
+        state_path.write_text(json.dumps({
+            "last_run_utc": "2026-05-22T09:49:35+00:00",
+            "seen_message_ids": [],
+            "retention_days": 30,
+        }))
+        mock_fetch.return_value = [
+            _gmail_message("old", "Old", "x@substack.com", internal_date=str(cutoff_ms - 1)),
+            _gmail_message("new", "New", "x@substack.com", internal_date=str(cutoff_ms + 1)),
+        ]
+
+        items = SubstackPMSource(seen_file_path=state_path).fetch()
+
+        assert [i["id"] for i in items] == ["new"]
 
     @patch("src.sources.substack_pm.SUBSTACK_MAX_NEWSLETTERS_PER_RUN", 3)
     @patch("src.sources.substack_pm.fetch_messages")
@@ -132,6 +165,14 @@ class TestMarkProcessed:
         before = state_path.read_text()
         SubstackPMSource(seen_file_path=state_path).mark_processed()
         assert state_path.read_text() == before
+
+    def test_mark_run_complete_updates_last_run_without_ids(self, state_path):
+        SubstackPMSource(seen_file_path=state_path).mark_run_complete()
+
+        state = json.loads(state_path.read_text())
+        assert state["seen_message_ids"] == []
+        assert state["last_run_utc"] is not None
+        assert datetime.fromisoformat(state["last_run_utc"]).tzinfo == timezone.utc
 
     @patch("src.sources.substack_pm.fetch_messages")
     def test_appends_to_existing_seen(self, mock_fetch, state_path):

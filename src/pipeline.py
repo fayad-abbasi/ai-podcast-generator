@@ -175,7 +175,7 @@ def _run_ai_industry(dry_run: bool = False) -> dict:
 def _run_substack_pm(dry_run: bool = False) -> dict:
     """Substack PM pipeline:
 
-    1. Fetch newsletters from Gmail (label:Substack/PM newer_than:7d, dedup against state).
+    1. Fetch newsletters from Gmail since the last completed run, dedup against state.
     2. Per-newsletter summary (Claude).
     3. Aggregate summary (Claude).
     4. Action items grounded in role.md/projects.md (Claude).
@@ -215,6 +215,8 @@ def _run_substack_pm(dry_run: bool = False) -> dict:
                 week_ending=week_ending,
                 creds=creds,
             )
+        if not dry_run:
+            src.mark_run_complete()
         result["status"] = "no_content"
         return result
 

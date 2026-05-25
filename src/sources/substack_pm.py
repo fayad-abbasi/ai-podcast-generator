@@ -1,7 +1,7 @@
 import json
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from email.utils import parseaddr
 from pathlib import Path
 
@@ -26,8 +26,10 @@ class SubstackPMSource:
         self._pending_seen_ids: list[str] = []
 
     def fetch(self, since_days: int = 7, gmail_service=None) -> list[ContentItem]:
-        seen_ids = _load_seen_ids(self._seen_path)
-        query = f"label:{SUBSTACK_GMAIL_LABEL} newer_than:{since_days}d"
+        state = _load_state(self._seen_path)
+        seen_ids = set(state.get("seen_message_ids", []))
+        last_run_utc = _parse_last_run_utc(state.get("last_run_utc"))
+        query = _build_gmail_query(last_run_utc, since_days)
 
         messages = fetch_messages(query, service=gmail_service)
         logger.info("substack_pm: %d messages from gmail", len(messages))
@@ -39,6 +41,9 @@ class SubstackPMSource:
         for msg in messages:
             msg_id = msg["id"]
             if msg_id in seen_ids:
+                skipped_dup += 1
+                continue
+            if last_run_utc and _parse_internal_date(msg.get("internal_date")) <= last_run_utc:
                 skipped_dup += 1
                 continue
             try:
@@ -94,10 +99,17 @@ class SubstackPMSource:
         existing = set(state.get("seen_message_ids", []))
         existing.update(ids_to_persist)
         state["seen_message_ids"] = sorted(existing)
+        self._write_state(state)
+        logger.info("substack_pm: persisted %d ids to %s", len(ids_to_persist), self._seen_path)
+
+    def mark_run_complete(self) -> None:
+        """Advance last_run_utc after a clean run with no processed messages."""
+        self._write_state(_load_state(self._seen_path))
+
+    def _write_state(self, state: dict) -> None:
         state["last_run_utc"] = datetime.now(timezone.utc).isoformat()
         self._seen_path.parent.mkdir(parents=True, exist_ok=True)
         self._seen_path.write_text(json.dumps(state, indent=2) + "\n")
-        logger.info("substack_pm: persisted %d ids to %s", len(ids_to_persist), self._seen_path)
 
 
 def _load_state(path: Path) -> dict:
@@ -110,8 +122,30 @@ def _load_state(path: Path) -> dict:
         return {"last_run_utc": None, "seen_message_ids": [], "retention_days": 30}
 
 
-def _load_seen_ids(path: Path) -> set[str]:
-    return set(_load_state(path).get("seen_message_ids", []))
+def _build_gmail_query(last_run_utc: datetime | None, since_days: int) -> str:
+    if last_run_utc is None:
+        return f"label:{SUBSTACK_GMAIL_LABEL} newer_than:{since_days}d"
+
+    # Gmail's `after:` operator is date-granular. Step back one UTC day and
+    # filter by internalDate after fetch so the cutoff is precise.
+    after_date = (last_run_utc - timedelta(days=1)).date()
+    return f"label:{SUBSTACK_GMAIL_LABEL} after:{after_date:%Y/%m/%d}"
+
+
+def _parse_last_run_utc(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        logger.warning(
+            "substack_pm: invalid last_run_utc %r; falling back to since_days",
+            value,
+        )
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
 
 
 _FORWARD_PREFIX_RE = re.compile(r"^(?:re|fwd?|fw)\s*:\s*", re.IGNORECASE)

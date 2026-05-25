@@ -107,6 +107,18 @@ class TestSubstackDryRun:
 
         assert result["status"] == "no_content"
         assert result["items_count"] == 0
+        src_instance.mark_run_complete.assert_not_called()
+
+    @patch("src.pipeline.SubstackPMSource")
+    def test_zero_items_marks_clean_non_dry_run_complete(self, mock_src_cls):
+        src_instance = MagicMock()
+        src_instance.fetch.return_value = []
+        mock_src_cls.return_value = src_instance
+
+        result = run_pipeline(source="substack_pm", dry_run=False)
+
+        assert result["status"] == "no_content"
+        src_instance.mark_run_complete.assert_called_once_with()
 
     @patch("src.pipeline.SubstackPMSource")
     @patch("src.pipeline.summarize_one")
