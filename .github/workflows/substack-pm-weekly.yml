@@ -2,6 +2,7 @@ name: Substack PM Weekly
 
 on:
   schedule:
+    - cron: '0 2 * * 3'   # 02:00 UTC Wednesday = Tuesday evening Eastern
     - cron: '0 6 * * 5'   # 06:00 UTC Friday = 02:00 ET Friday
   workflow_dispatch:
 

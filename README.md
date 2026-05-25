@@ -11,7 +11,7 @@
 [![GitHub Actions](https://img.shields.io/badge/GitHub%20Actions-Automated-2088FF?style=flat&logo=github-actions&logoColor=white)](https://github.com/features/actions)
 [![RSS](https://img.shields.io/badge/RSS-GitHub%20Pages-FFA500?style=flat&logo=rss&logoColor=white)]()
 
-> The repo also runs **Substack PM Weekly** — a private weekly digest of the maintainer's paid Substack PM newsletters (Friday cron, Gmail-sourced, email-only delivery). The pipeline modules and `Source` plugin protocol are shared across both podcasts; only the ingestion stage and the final audience differ.
+> The repo also runs **Substack PM Weekly** — a private twice-weekly digest of the maintainer's paid Substack PM newsletters (Tuesday evening and Friday cron runs, Gmail-sourced, email-only delivery). The pipeline modules and `Source` plugin protocol are shared across both podcasts; only the ingestion stage and the final audience differ.
 
 ---
 
