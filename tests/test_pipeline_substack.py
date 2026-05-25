@@ -170,6 +170,8 @@ class TestSubstackDryRun:
 
         assert result["status"] == "all_skipped"
         assert result["errors"][0]["stage"] == "summarize"
+        src_instance.mark_run_complete.assert_not_called()
+        src_instance.mark_processed.assert_not_called()
 
     @patch("src.pipeline.send_empty_week_email")
     @patch("src.pipeline._try_smtp_creds")
