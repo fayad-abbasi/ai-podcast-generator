@@ -1,4 +1,5 @@
 from pathlib import Path
+from urllib.parse import urlparse
 
 import pytest
 
@@ -59,7 +60,9 @@ class TestFindCanonicalUrl:
         html = '<html><body><a href="https://producttalk.substack.com/post/123-something">read</a></body></html>'
         soup = BeautifulSoup(html, "lxml")
         url = _find_canonical_url(soup, html)
-        assert "substack.com" in url
+        host = urlparse(url).hostname
+        assert host is not None
+        assert host == "substack.com" or host.endswith(".substack.com")
 
     def test_skips_chrome_substack_links(self):
         """Account/profile/redirect Substack URLs aren't valid post canonicals."""
