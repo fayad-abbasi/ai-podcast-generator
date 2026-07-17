@@ -1,5 +1,6 @@
 import logging
 import re
+from urllib.parse import urlparse
 
 from bs4 import BeautifulSoup
 from readability import Document
@@ -62,13 +63,21 @@ def _find_canonical_url(soup: BeautifulSoup, html: str) -> str:
 
     for anchor in soup.find_all("a", href=True):
         href = anchor["href"].strip()
-        if "substack.com" in href.lower() and not _is_chrome_link(href):
+        if _is_substack_url(href) and not _is_chrome_link(href):
             return href
 
     return ""
 
 
 _CHROME_PATH_FRAGMENTS = ("/account", "/subscribe", "/profile", "/app", "/redirect")
+
+
+def _is_substack_url(href: str) -> bool:
+    try:
+        host = (urlparse(href).hostname or "").lower()
+    except Exception:
+        return False
+    return host == "substack.com" or host.endswith(".substack.com")
 
 
 def _is_chrome_link(href: str) -> bool:
