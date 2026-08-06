@@ -20,6 +20,16 @@
     <itunes:type>episodic</itunes:type>
     <!-- Episodes inserted here by publish.py -->
     <item>
+      <title>AI Industry Weekly — August 6, 2026</title>
+      <description>AI Industry Weekly episode for the week ending 2026-08-06.</description>
+      <enclosure url="https://fayad-abbasi.github.io/ai-podcast-generator/site/episodes/episode_2026-08-06.mp3" length="9329709" type="audio/mpeg"/>
+      <guid isPermaLink="false">episode_2026-08-06</guid>
+      <pubDate>Thu, 06 Aug 2026 04:16:19 GMT</pubDate>
+      <itunes:duration>00:09:43</itunes:duration>
+      <itunes:summary>AI Industry Weekly episode for the week ending 2026-08-06.</itunes:summary>
+      <itunes:episodeType>full</itunes:episodeType>
+    </item>
+    <item>
       <title>AI Industry Weekly — July 30, 2026</title>
       <description>AI Industry Weekly episode for the week ending 2026-07-30.</description>
       <enclosure url="https://fayad-abbasi.github.io/ai-podcast-generator/site/episodes/episode_2026-07-30.mp3" length="9241005" type="audio/mpeg"/>
