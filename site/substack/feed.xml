@@ -20,6 +20,16 @@
     <itunes:type>episodic</itunes:type>
     <!-- Episodes inserted here by publish.py -->
     <item>
+      <title>Substack PM Weekly — August 19, 2026</title>
+      <description>Substack PM Weekly episode for the week ending 2026-08-19.</description>
+      <enclosure url="https://fayad-abbasi.github.io/ai-podcast-generator/site/substack/episodes/episode_2026-08-19.mp3" length="24137133" type="audio/mpeg"/>
+      <guid isPermaLink="false">substack_2026-08-19</guid>
+      <pubDate>Wed, 19 Aug 2026 03:16:00 GMT</pubDate>
+      <itunes:duration>00:25:08</itunes:duration>
+      <itunes:summary>Substack PM Weekly episode for the week ending 2026-08-19.</itunes:summary>
+      <itunes:episodeType>full</itunes:episodeType>
+    </item>
+    <item>
       <title>Substack PM Weekly — August 14, 2026</title>
       <description>Substack PM Weekly episode for the week ending 2026-08-14.</description>
       <enclosure url="https://fayad-abbasi.github.io/ai-podcast-generator/site/substack/episodes/episode_2026-08-14.mp3" length="13241901" type="audio/mpeg"/>
