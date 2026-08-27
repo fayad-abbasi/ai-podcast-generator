@@ -136,7 +136,7 @@ def _call_claude(
             response = client.messages.create(
                 model=CLAUDE_MODEL,
                 max_tokens=SCRIPTGEN_MAX_TOKENS,
-                temperature=SCRIPTGEN_TEMPERATURE,
+#                temperature=SCRIPTGEN_TEMPERATURE,  # removed: not accepted by anthropic>=1.1.0
                 system=system_prompt,
                 messages=messages,
             )
