@@ -131,7 +131,7 @@ def _call_claude(
             response = client.messages.create(
                 model=CLAUDE_MODEL,
                 max_tokens=SUMMARIZE_MAX_TOKENS,
-                temperature=SUMMARIZE_TEMPERATURE,
+#                temperature=SUMMARIZE_TEMPERATURE,
                 system=system_prompt,
                 messages=messages,
             )
