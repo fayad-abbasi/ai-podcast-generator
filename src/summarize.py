@@ -8,10 +8,12 @@ import anthropic
 from src.config import (
     ANTHROPIC_API_KEY,
     CLAUDE_MODEL,
+    CLAUDE_THINKING,
     PROMPTS_DIR,
     SUMMARIZE_MAX_TOKENS,
     SUMMARIZE_TEMPERATURE,
 )
+from src._claude_response import first_text_block
 from src.sources import ContentItem
 
 
@@ -131,6 +133,7 @@ def _call_claude(
             response = client.messages.create(
                 model=CLAUDE_MODEL,
                 max_tokens=SUMMARIZE_MAX_TOKENS,
+                thinking=CLAUDE_THINKING,
 #                temperature=SUMMARIZE_TEMPERATURE,
                 system=system_prompt,
                 messages=messages,
@@ -140,7 +143,7 @@ def _call_claude(
                     "Claude response truncated at %d tokens — increase SUMMARIZE_MAX_TOKENS",
                     SUMMARIZE_MAX_TOKENS,
                 )
-            return response.content[0].text
+            return first_text_block(response)
         except anthropic.APIStatusError as e:
             if e.status_code in RETRYABLE_STATUS_CODES and attempt < len(API_RETRY_DELAYS) - 1:
                 logger.warning(
