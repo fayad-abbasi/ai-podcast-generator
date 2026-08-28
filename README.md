@@ -12,7 +12,7 @@
 [![GitHub Actions](https://img.shields.io/badge/GitHub%20Actions-Automated-2088FF?style=flat&logo=github-actions&logoColor=white)](https://github.com/features/actions)
 [![Dependabot](https://img.shields.io/badge/Dependabot-enabled-025E8C?style=flat&logo=dependabot&logoColor=white)](.github/dependabot.yml)
 [![CodeQL](https://img.shields.io/badge/CodeQL-scanning-2088FF?style=flat&logo=github&logoColor=white)](https://github.com/fayad-abbasi/ai-podcast-generator/security/code-scanning)
-[![Tests](https://img.shields.io/badge/tests-179-success?style=flat&logo=pytest&logoColor=white)](tests/)
+[![Tests](https://img.shields.io/badge/tests-188-success?style=flat&logo=pytest&logoColor=white)](tests/)
 
 ---
 
@@ -166,7 +166,7 @@ Merged to date: 12 Dependabot PRs across both ecosystems (`lxml`, `markdown`, `f
 
 ## Testing & CI
 
-**179 tests across 17 files** (~3,300 lines of test code), run by `ci.yml` on every pull request and every push to `main`.
+**188 tests across 18 files** (~3,300 lines of test code), run by `ci.yml` on every pull request and every push to `main`.
 
 ```bash
 pytest -q
@@ -277,6 +277,7 @@ src/
 ├── audio.py             # ffmpeg stitching with silence gaps
 ├── publish.py           # RSS XML manipulation
 ├── email_publish.py     # SMTP HTML digest email
+├── _claude_response.py  # Text-block extraction, thinking-setting agnostic
 ├── pipeline.py          # Orchestrator — dispatches by --source
 └── sources/
     ├── __init__.py      # Source Protocol + ContentItem TypedDict
@@ -292,7 +293,7 @@ prompts/
 templates/feed_template.xml
 state/substack_seen.json # Gmail dedup state
 specs/                   # Spec-driven build docs for the Substack pipeline
-tests/                   # 179 tests, 17 files
+tests/                   # 188 tests, 18 files
 scripts/
 ├── run_local.py             # Stage-by-stage local runner
 └── gmail_oauth_bootstrap.py # One-time OAuth token generation
@@ -314,7 +315,9 @@ site/                    # GitHub Pages — public feed + /substack private feed
 
 **`git add -f` is deliberate.** `.gitignore` excludes `*.mp3` to keep local scratch files out; published episodes are force-added by the workflows.
 
-**Claude model.** `claude-sonnet-4-6`, set in `config.py:CLAUDE_MODEL`.
+**Claude model.** `claude-sonnet-5`, set in `config.py:CLAUDE_MODEL`.
+
+**Thinking is disabled explicitly.** On Sonnet 4.6 omitting the `thinking` parameter meant no thinking; on Sonnet 5 it is **on by default**, which makes `content[0]` a thinking block rather than the text — and with `display` defaulting to `"omitted"`, that block is an empty string. `config.py` therefore sets `CLAUDE_THINKING = {"type": "disabled"}` so output shape and token spend match the behaviour the prompts were tuned against. `src/_claude_response.py` selects the text block **by type rather than position**, so flipping thinking to `{"type": "adaptive"}` is a safe one-line opt-in.
 
 **Cost.** Roughly **$0.08 per episode** (Claude API + Google TTS); GitHub Pages and Actions are free at this volume. This figure is an original estimate from the AI Industry build and has not been re-measured since the Substack pipeline and action-items stage were added.
 
@@ -324,6 +327,7 @@ site/                    # GitHub Pages — public feed + /substack private feed
 
 - [ ] Re-measure per-episode cost across both pipelines
 - [ ] Revisit the `anthropic<1.2.0` ceiling once 1.2.x is validated
+- [ ] Evaluate adaptive thinking (`CLAUDE_THINKING`) against summary quality and cost
 - [ ] Per-source relevance scoring to filter low-signal content
 - [ ] Dynamic episode length based on news volume that week
 - [ ] Chapter markers in the RSS feed for navigation
