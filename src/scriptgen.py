@@ -8,10 +8,12 @@ import anthropic
 from src.config import (
     ANTHROPIC_API_KEY,
     CLAUDE_MODEL,
+    CLAUDE_THINKING,
     PROMPTS_DIR,
     SCRIPTGEN_MAX_TOKENS,
     SCRIPTGEN_TEMPERATURE,
 )
+from src._claude_response import first_text_block
 
 logger = logging.getLogger(__name__)
 
@@ -136,11 +138,12 @@ def _call_claude(
             response = client.messages.create(
                 model=CLAUDE_MODEL,
                 max_tokens=SCRIPTGEN_MAX_TOKENS,
+                thinking=CLAUDE_THINKING,
 #                temperature=SCRIPTGEN_TEMPERATURE,  # removed: not accepted by anthropic>=1.1.0
                 system=system_prompt,
                 messages=messages,
             )
-            return response.content[0].text
+            return first_text_block(response)
         except anthropic.APIStatusError as e:
             if e.status_code in RETRYABLE_STATUS_CODES and attempt < len(API_RETRY_DELAYS) - 1:
                 logger.warning(

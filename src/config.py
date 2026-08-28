@@ -152,7 +152,12 @@ SOURCES: list[dict] = [
 ]
 
 # ── Claude API ─────────────────────────────────────────
-CLAUDE_MODEL = "claude-sonnet-4-6"
+CLAUDE_MODEL = "claude-sonnet-5"
+# Thinking is off on the 4.6 family unless requested, but ON BY DEFAULT on
+# Sonnet 5. Disabling it keeps output shape and token spend equivalent to the
+# 4.6 behaviour this pipeline was tuned against. Set to {"type": "adaptive"}
+# to opt into reasoning — first_text_block() already handles both shapes.
+CLAUDE_THINKING = {"type": "disabled"}
 SUMMARIZE_MAX_TOKENS = 16384
 SUMMARIZE_TEMPERATURE = 0.3
 SCRIPTGEN_MAX_TOKENS = 8192

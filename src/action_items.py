@@ -10,11 +10,13 @@ from src.config import (
     ACTION_ITEMS_COUNT,
     ANTHROPIC_API_KEY,
     CLAUDE_MODEL,
+    CLAUDE_THINKING,
     PROMPTS_DIR,
     ROOT_DIR,
     SUMMARIZE_MAX_TOKENS,
     SUMMARIZE_TEMPERATURE,
 )
+from src._claude_response import first_text_block
 from src.summarize import AggregateSummary, NewsletterSummary, _try_parse_json
 
 logger = logging.getLogger(__name__)
@@ -129,11 +131,12 @@ def _call_claude(
             response = client.messages.create(
                 model=CLAUDE_MODEL,
                 max_tokens=SUMMARIZE_MAX_TOKENS,
+                thinking=CLAUDE_THINKING,
 #                temperature=SUMMARIZE_TEMPERATURE,  # removed: not accepted by anthropic>=1.1.0
                 system=system_prompt,
                 messages=messages,
             )
-            return response.content[0].text
+            return first_text_block(response)
         except anthropic.APIStatusError as e:
             if e.status_code in RETRYABLE_STATUS_CODES and attempt < len(API_RETRY_DELAYS) - 1:
                 logger.warning(
