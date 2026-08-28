@@ -182,7 +182,7 @@ Notable: `test_substack_pm_source.py` includes **last-run contract tests** that 
 
 **Two pipelines, one codebase.** `src/sources/__init__.py` defines a `Source` Protocol and a `ContentItem` TypedDict. Adding a third podcast means writing one `fetch()` method — every downstream stage is already source-agnostic.
 
-**Diff-based ingestion.** Rather than reprocessing everything, AI Industry snapshots the previous run to an **orphan `snapshots` branch** (keeping binary state out of `main`'s history) and only forwards new content. Substack keeps `state/substack_seen.json` with Gmail message IDs plus a last-run timestamp, so a mid-week manual run doesn't re-digest what the scheduled run already sent.
+**Diff-based ingestion.** Rather than reprocessing everything, AI Industry snapshots the previous run to a standalone **orphan `snapshots` branch** and only forwards new content. `diff.py` reads that baseline with `git show origin/snapshots:snapshots/<source>.json` — the tip blob, never a checkout — so the branch's history carries no value and it is rebuilt from scratch on every run, holding the six JSON snapshots and nothing else. Substack keeps `state/substack_seen.json` with Gmail message IDs plus a last-run timestamp, so a mid-week manual run doesn't re-digest what the scheduled run already sent.
 
 **Two-stage Claude prompting.** Summarization and script generation are separated intentionally. The summarize stage produces structured theme clusters; the script stage consumes those clusters to write dialogue. Combining them in one prompt produced worse scripts.
 
