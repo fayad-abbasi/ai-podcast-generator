@@ -134,10 +134,48 @@ class TestAggregateSummarize:
         with pytest.raises(ValueError):
             aggregate_summarize([json.loads(_ok_summary_json())])
 
+    @patch("src.summarize.anthropic.Anthropic")
+    def test_accepts_omitted_notable_quotes(self, anthropic_cls):
+        """The prompt says 'Skip if nothing stands out' — honour that contract."""
+        no_quotes = json.dumps({
+            "narrative": "x" * 150,
+            "cross_cutting_themes": ["a theme"],
+        })
+        _mock_claude(anthropic_cls, [no_quotes])
+        result = aggregate_summarize([json.loads(_ok_summary_json())])
+        assert result["notable_quotes"] == []
+
+    @patch("src.summarize.anthropic.Anthropic")
+    def test_accepts_omitted_cross_cutting_themes(self, anthropic_cls):
+        """The prompt says themes 'can be empty' when only one newsletter is given."""
+        no_themes = json.dumps({
+            "narrative": "x" * 150,
+            "notable_quotes": ["a quote"],
+        })
+        _mock_claude(anthropic_cls, [no_themes])
+        result = aggregate_summarize([json.loads(_ok_summary_json())])
+        assert result["cross_cutting_themes"] == []
+
+    @patch("src.summarize.anthropic.Anthropic")
+    def test_still_rejects_wrong_typed_optional_keys(self, anthropic_cls):
+        """Omitting a key is allowed; a string where a list belongs is not."""
+        wrong = json.dumps({
+            "narrative": "x" * 150,
+            "cross_cutting_themes": "not a list",
+            "notable_quotes": [],
+        })
+        _mock_claude(anthropic_cls, [wrong, wrong])
+        with pytest.raises(ValueError):
+            aggregate_summarize([json.loads(_ok_summary_json())])
+
 
 class TestValidators:
     def test_newsletter_summary_requires_keys(self):
         assert not _validate_newsletter_summary({"title": "x"})
+
+    def test_aggregate_summary_allows_missing_optional_lists(self):
+        """Missing optional keys are valid; aggregate_summarize fills them with []."""
+        assert _validate_aggregate_summary({"narrative": "x" * 150})
 
     def test_aggregate_summary_requires_narrative(self):
         assert not _validate_aggregate_summary({"narrative": "short", "cross_cutting_themes": [], "notable_quotes": []})

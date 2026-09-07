@@ -284,7 +284,7 @@ def aggregate_summarize(
     raw = _call_claude(client, system_prompt, messages)
     parsed = _try_parse_json(raw)
     if parsed and _validate_aggregate_summary(parsed):
-        return parsed
+        return _normalize_aggregate_summary(parsed)
 
     logger.warning("Invalid aggregate_summarize output — retrying")
     messages.append({"role": "assistant", "content": raw})
@@ -292,18 +292,44 @@ def aggregate_summarize(
     raw = _call_claude(client, system_prompt, messages)
     parsed = _try_parse_json(raw)
     if parsed and _validate_aggregate_summary(parsed):
-        return parsed
+        return _normalize_aggregate_summary(parsed)
 
     raise ValueError(f"aggregate_summarize failed: last response: {raw[:200]}")
 
 
+_AGGREGATE_OPTIONAL_LISTS = ("cross_cutting_themes", "notable_quotes")
+
+
 def _validate_aggregate_summary(data: dict) -> bool:
-    if not isinstance(data, dict):
-        return False
-    if not isinstance(data.get("narrative"), str) or len(data["narrative"]) < 100:
-        return False
-    if not isinstance(data.get("cross_cutting_themes"), list):
-        return False
-    if not isinstance(data.get("notable_quotes"), list):
+    reason = _aggregate_summary_rejection(data)
+    if reason:
+        logger.warning("Aggregate summary rejected: %s", reason)
         return False
     return True
+
+
+def _aggregate_summary_rejection(data: dict) -> str | None:
+    """Return the rejection reason as a string, or None if valid.
+
+    `cross_cutting_themes` and `notable_quotes` are OPTIONAL, because
+    aggregate_substack.txt tells the model it may skip quotes when nothing
+    stands out and leave themes empty for a single newsletter. Omitting a
+    key is valid; giving it the wrong type is not.
+    """
+    if not isinstance(data, dict):
+        return f"not a dict: {type(data).__name__}"
+    if not isinstance(data.get("narrative"), str):
+        return f"narrative not str: {type(data.get('narrative')).__name__}"
+    if len(data["narrative"]) < 100:
+        return f"narrative length {len(data['narrative'])} < 100"
+    for key in _AGGREGATE_OPTIONAL_LISTS:
+        if key in data and not isinstance(data[key], list):
+            return f"{key} not list: {type(data[key]).__name__}"
+    return None
+
+
+def _normalize_aggregate_summary(data: dict) -> AggregateSummary:
+    """Fill omitted optional lists so downstream consumers always get a list."""
+    for key in _AGGREGATE_OPTIONAL_LISTS:
+        data.setdefault(key, [])
+    return data
