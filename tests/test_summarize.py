@@ -222,6 +222,19 @@ class TestHelpers:
         result = _try_parse_json('```json\n{"a": 1}\n```')
         assert result == {"a": 1}
 
+    def test_try_parse_json_allows_literal_newlines_in_strings(self):
+        """The aggregate prompt asks for 2-3 paragraphs; the model emits the
+        paragraph breaks as real newlines inside the JSON string. Regression
+        test for the 2026-09-02/04/09 Substack PM Weekly failures."""
+        raw = '```json\n{"narrative": "First paragraph.\n\nSecond paragraph."}\n```'
+        result = _try_parse_json(raw)
+        assert result is not None
+        assert result["narrative"] == "First paragraph.\n\nSecond paragraph."
+
+    def test_try_parse_json_allows_literal_newlines_unfenced(self):
+        raw = '{"narrative": "First paragraph.\n\nSecond paragraph."}'
+        assert _try_parse_json(raw) is not None
+
     def test_validate_requires_themes_list(self):
         assert _validate_summarize_output({"themes": [{"name": "x"}]}) is True
         assert _validate_summarize_output({"themes": []}) is False
