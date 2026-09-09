@@ -1,4 +1,5 @@
 import argparse
+import html
 import json
 import logging
 import shutil
@@ -327,6 +328,38 @@ def _run_substack_pm(dry_run: bool = False) -> dict:
     return result
 
 
+def _emit_failure_report(exc: BaseException, source: str) -> None:
+    """Write and email a diagnostic report. Never masks the original failure.
+
+    GitHub already emails "the job failed" with a link. That is a notification,
+    not a diagnosis. This carries the payload: the full unparseable response,
+    the reason each parse strategy rejected it, and the model config — the
+    things that had to be dug out by hand after the September failures.
+    """
+    from src import _diagnostics as diagnostics
+
+    diagnostics.note("source", source)
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    path = Path("diagnostics") / f"failure-{source}-{stamp}.json"
+
+    try:
+        diagnostics.write_report(path, exc)
+        logger.error("Wrote failure report: %s", path)
+    except Exception as e:  # pragma: no cover - reporting must never mask
+        logger.error("Could not write failure report: %s", e)
+        return
+
+    try:
+        from src.email_publish import smtp_creds_from_env, _send_smtp
+        report = diagnostics.build_report(exc)
+        body = diagnostics.render_text(report)
+        subject = f"[FAILED] {source} - {type(exc).__name__}: {str(exc)[:120]}"
+        _send_smtp(subject, f"<pre>{html.escape(body)}</pre>", body, smtp_creds_from_env())
+        logger.error("Emailed failure report")
+    except Exception as e:  # pragma: no cover
+        logger.error("Could not email failure report: %s (report still at %s)", e, path)
+
+
 if __name__ == "__main__":
     logging.basicConfig(
         level=logging.INFO,
@@ -338,5 +371,10 @@ if __name__ == "__main__":
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
-    result = run_pipeline(source=args.source, dry_run=args.dry_run)
+    try:
+        result = run_pipeline(source=args.source, dry_run=args.dry_run)
+    except BaseException as exc:
+        _emit_failure_report(exc, source=args.source)
+        raise
+
     print(json.dumps(result, indent=2, default=str))

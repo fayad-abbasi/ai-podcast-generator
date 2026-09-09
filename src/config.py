@@ -195,7 +195,7 @@ PODCAST_CATEGORY = "Technology"
 
 # ── Substack PM Weekly ─────────────────────────────────
 SUBSTACK_GMAIL_LABEL = "Substack/PM"
-SUBSTACK_LOOKBACK_DAYS = 7
+SUBSTACK_LOOKBACK_DAYS = int(os.environ.get("SUBSTACK_LOOKBACK_DAYS", "7"))
 SUBSTACK_PER_SEGMENT_TARGET_WORDS = 750
 SUBSTACK_FEED_DIR = "site/substack"
 SUBSTACK_PODCAST_TITLE = "Substack PM Weekly"
