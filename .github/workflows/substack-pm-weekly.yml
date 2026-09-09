@@ -10,6 +10,11 @@ on:
         description: 'Days to look back for newsletters (default 7). Raise to recover a backlog after failed runs.'
         required: false
         default: ''
+      dry_run:
+        description: 'Exercise every model call and JSON parse, then stop before TTS. Writes no episode, touches no feed, consumes no backlog. Use to verify a dependency bump.'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -57,10 +62,11 @@ jobs:
           NOTIFY_EMAIL: ${{ secrets.NOTIFY_EMAIL }}
           LOG_LEVEL: INFO
           SUBSTACK_LOOKBACK_DAYS: ${{ inputs.lookback_days || '7' }}
-        run: python -m src.pipeline --source substack_pm
+        run: python -m src.pipeline --source substack_pm ${{ inputs.dry_run && '--dry-run' || '' }}
 
       # ── Publish Episode ────────────────────────────
       - name: Commit and push episode + state
+        if: ${{ !inputs.dry_run }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"

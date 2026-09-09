@@ -93,6 +93,40 @@ output containing literal newlines.
 
 ---
 
+## Verifying a dependency bump
+
+⚠️ **Dependabot merges are not free.** This pipeline has been broken by a dependency
+change twice:
+
+- **anthropic 1.1.0** removed `temperature` from `Messages.create()` and broke the
+  scheduled runs. Fixed by removing `temperature=` from all three call sites and
+  pinning `<1.2.0` — the ceiling is minor-level *because this package ships
+  breaking changes in minor bumps*.
+- **`#23`** moved `CLAUDE_MODEL` to `claude-sonnet-5`, which changed output
+  formatting and broke JSON parsing for a week before anyone connected it.
+
+Neither was caught before a scheduled run failed. **Use a dry run instead:**
+
+```bash
+gh workflow run "Substack PM Weekly" \
+  --repo fayad-abbasi/ai-podcast-generator --ref main \
+  -f dry_run=true
+```
+
+A dry run exercises **ingest → all per-newsletter summaries → aggregate → action
+items → script generation**, which is every model call and every JSON parse path.
+It stops before TTS, so it:
+
+- writes no episode and cannot overwrite one
+- does not touch `feed.xml`
+- does not call `mark_run_complete()`, so the backlog is untouched
+
+Cost is a few minutes and some tokens. Cheaper than finding out at 02:00 Friday.
+
+**The rule, same as for fixes: a merged dependency bump is _deployed_, not _verified_.**
+
+---
+
 ## Recovering a backlog
 
 Failures do not consume items — state is only committed on success. But the
