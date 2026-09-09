@@ -158,33 +158,45 @@ def _call_claude(
 
 
 def _try_parse_json(text: str) -> dict | None:
-    """Attempt to parse text as JSON, stripping markdown fences if present."""
+    """Attempt to parse text as JSON, stripping markdown fences if present.
+
+    `strict=False` is deliberate. aggregate_substack.txt asks for a
+    "2-3 paragraph" narrative, and the model emits those paragraph breaks
+    as literal newlines inside the JSON string value. Python's json module
+    rejects control characters inside strings by default, which fails all
+    three strategies below on output that is otherwise well formed.
+
+    On failure we log every decode error. The callers only surface
+    `raw[:200]`, which shows what came back but never why it was rejected.
+    """
     text = text.strip()
+    errors: list[str] = []
 
     # 1. Try raw parse first
     try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        pass
+        return json.loads(text, strict=False)
+    except json.JSONDecodeError as e:
+        errors.append(f"raw: {e}")
 
     # 2. Extract content between ```json ... ``` fences
     import re
     fence_match = re.search(r"```(?:json)?\s*\n(.*?)```", text, re.DOTALL)
     if fence_match:
         try:
-            return json.loads(fence_match.group(1).strip())
-        except json.JSONDecodeError:
-            pass
+            return json.loads(fence_match.group(1).strip(), strict=False)
+        except json.JSONDecodeError as e:
+            errors.append(f"fence: {e}")
 
     # 3. Find the outermost { ... } and try parsing that
     start = text.find("{")
     end = text.rfind("}")
     if start != -1 and end > start:
         try:
-            return json.loads(text[start:end + 1])
-        except json.JSONDecodeError:
-            pass
+            return json.loads(text[start:end + 1], strict=False)
+        except json.JSONDecodeError as e:
+            errors.append(f"braces: {e}")
 
+    logger.warning("JSON parse failed - %s", " | ".join(errors) or "no JSON object found")
     return None
 
 
