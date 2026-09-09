@@ -5,6 +5,8 @@ from typing import TypedDict
 
 import anthropic
 
+from src import _diagnostics as diagnostics
+
 from src.config import (
     ANTHROPIC_API_KEY,
     CLAUDE_MODEL,
@@ -157,6 +159,9 @@ def _call_claude(
     raise RuntimeError("All Claude API retries exhausted")
 
 
+_parse_stage: dict = {}
+
+
 def _try_parse_json(text: str) -> dict | None:
     """Attempt to parse text as JSON, stripping markdown fences if present.
 
@@ -196,7 +201,10 @@ def _try_parse_json(text: str) -> dict | None:
         except json.JSONDecodeError as e:
             errors.append(f"braces: {e}")
 
-    logger.warning("JSON parse failed - %s", " | ".join(errors) or "no JSON object found")
+    detail = " | ".join(errors) or "no JSON object found"
+    logger.warning("JSON parse failed - %s", detail)
+    diagnostics.record_response(_parse_stage.get("stage", "unknown"), text,
+                                errors=errors, item=_parse_stage.get("item"))
     return None
 
 
@@ -293,6 +301,7 @@ def aggregate_summarize(
     client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
     messages = [{"role": "user", "content": user_message}]
 
+    _parse_stage.update({"stage": "aggregate_summarize", "item": None})
     raw = _call_claude(client, system_prompt, messages)
     parsed = _try_parse_json(raw)
     if parsed and _validate_aggregate_summary(parsed):
