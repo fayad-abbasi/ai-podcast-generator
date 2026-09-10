@@ -144,6 +144,24 @@ gh workflow run "Substack PM Weekly" \
   -f lookback_days=14
 ```
 
+⚠️⚠️ **`lookback_days` alone will NOT recover items older than the last
+successful run.** `fetch()` filters anything with
+`internal_date <= last_run_utc`, so widening the Gmail query does nothing once
+a green run has advanced the clock. Verified the hard way on 2026-09-09: a
+14-day dry run returned exactly one newsletter.
+
+To reach back past a successful run you must **roll the clock back by hand**:
+
+```bash
+# edit state/substack_seen.json, set last_run_utc to before the missed window
+git commit -am "chore: roll back last_run_utc to recover <window>"
+git push
+gh workflow run "Substack PM Weekly" --ref main -f lookback_days=14
+```
+
+Removing the relevant ids from `seen_message_ids` may also be needed if those
+messages were processed.
+
 ⚠️ **Backlog recovery is time-limited.** Every day that passes moves more items
 out of any window you widen to. Do it the day you notice.
 
