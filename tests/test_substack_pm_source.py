@@ -1,5 +1,5 @@
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 
@@ -299,3 +299,71 @@ class TestCapDoesNotDiscardOverflow:
         data = json.loads((tmp_path / "seen.json").read_text())
         assert set(data["seen_message_ids"]) == {"kept1", "kept2"}
         assert data["last_run_utc"] is None or "2026" in str(data["last_run_utc"])
+
+
+# ── retention: seen ids must not accumulate forever ─────────────
+
+
+class TestSeenIdRetention:
+    """`retention_days` sat in the state file from the start and was never read.
+
+    The list had reached 220 ids by 2026-09-19 and grew every week. Ids are now
+    stamped when first persisted and dropped once they fall outside the window;
+    a message that old is filtered by the internal_date guard anyway, so
+    forgetting it costs nothing.
+    """
+
+    def _state(self, path):
+        return json.loads(path.read_text())
+
+    def test_stamps_each_id_with_the_time_it_was_persisted(self, state_path):
+        src = SubstackPMSource(seen_file_path=state_path)
+
+        src.mark_processed(["new1"])
+
+        assert "new1" in self._state(state_path)["seen_at"]
+
+    def test_drops_ids_older_than_the_retention_window(self, state_path):
+        old = (datetime.now(timezone.utc) - timedelta(days=45)).isoformat()
+        state_path.write_text(json.dumps({
+            "last_run_utc": None,
+            "seen_message_ids": ["ancient"],
+            "seen_at": {"ancient": old},
+            "retention_days": 30,
+        }))
+        src = SubstackPMSource(seen_file_path=state_path)
+
+        src.mark_processed(["fresh"])
+
+        state = self._state(state_path)
+        assert state["seen_message_ids"] == ["fresh"]
+        assert "ancient" not in state["seen_at"]
+
+    def test_keeps_ids_inside_the_retention_window(self, state_path):
+        recent = (datetime.now(timezone.utc) - timedelta(days=10)).isoformat()
+        state_path.write_text(json.dumps({
+            "last_run_utc": None,
+            "seen_message_ids": ["recent"],
+            "seen_at": {"recent": recent},
+            "retention_days": 30,
+        }))
+        src = SubstackPMSource(seen_file_path=state_path)
+
+        src.mark_processed(["fresh"])
+
+        assert set(self._state(state_path)["seen_message_ids"]) == {"recent", "fresh"}
+
+    def test_stamps_legacy_ids_that_were_written_before_stamping_existed(self, state_path):
+        """The live state file has 220 ids and no timestamps. None may be lost."""
+        state_path.write_text(json.dumps({
+            "last_run_utc": None,
+            "seen_message_ids": ["legacy1", "legacy2"],
+            "retention_days": 30,
+        }))
+        src = SubstackPMSource(seen_file_path=state_path)
+
+        src.mark_processed(["fresh"])
+
+        state = self._state(state_path)
+        assert set(state["seen_message_ids"]) == {"legacy1", "legacy2", "fresh"}
+        assert set(state["seen_at"]) == {"legacy1", "legacy2", "fresh"}
