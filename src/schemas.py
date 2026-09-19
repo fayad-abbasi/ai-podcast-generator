@@ -42,28 +42,29 @@ NEWSLETTER_SUMMARY_SCHEMA: dict = {
 def action_items_schema(count: int) -> dict:
     """Schema for the action-items wrapper object.
 
-    `count` is pinned to ACTION_ITEMS_COUNT so the "EXACTLY 3 ITEMS"
-    instruction in the prompt becomes an API-enforced constraint rather than
-    a request the validator checks after the fact.
+    ⚠️ The API's schema subset is narrower than JSON Schema: `minItems` accepts
+    only 0 or 1, and `maxItems`, `minimum` and `maximum` are rejected outright
+    with a 400 before the model is called (run 35452947732, 2026-09-19).
+
+    So the schema guarantees the SHAPE — an object with an `items` array of
+    well-formed action items, each carrying an integer `estimated_minutes` —
+    and `count` and the 10-30 bound stay where they can be enforced:
+    `_rejection()` in action_items.py, which now records why it rejected a
+    response. The prompt still asks for exactly `count` items.
     """
     return {
         "type": "object",
         "properties": {
             "items": {
                 "type": "array",
-                "minItems": count,
-                "maxItems": count,
+                "minItems": 1,
                 "items": {
                     "type": "object",
                     "properties": {
                         "title": {"type": "string"},
                         "description": {"type": "string"},
                         "source_url": {"type": "string"},
-                        "estimated_minutes": {
-                            "type": "integer",
-                            "minimum": 10,
-                            "maximum": 30,
-                        },
+                        "estimated_minutes": {"type": "integer"},
                     },
                     "required": [
                         "title",
