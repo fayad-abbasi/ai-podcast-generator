@@ -24,6 +24,9 @@ class SubstackPMSource:
     def __init__(self, seen_file_path: Path | None = None):
         self._seen_path = Path(seen_file_path) if seen_file_path else (ROOT_DIR / SUBSTACK_SEEN_FILE)
         self._pending_seen_ids: list[str] = []
+        # Set when the per-run cap drops items. Those items are the OLDEST,
+        # so advancing last_run_utc past them would filter them out forever.
+        self._held_back_items = False
 
     def fetch(self, since_days: int = 7, gmail_service=None) -> list[ContentItem]:
         state = _load_state(self._seen_path)
@@ -84,9 +87,10 @@ class SubstackPMSource:
             items = items[:SUBSTACK_MAX_NEWSLETTERS_PER_RUN]
             kept_ids = {it["id"] for it in items}
             self._pending_seen_ids = [i for i in self._pending_seen_ids if i in kept_ids]
+            self._held_back_items = True
             logger.warning(
                 "substack_pm: capped at %d items (dropped %d oldest); "
-                "they'll re-appear next run if still within lookback window",
+                "holding last_run_utc so they survive to the next run",
                 SUBSTACK_MAX_NEWSLETTERS_PER_RUN, len(dropped),
             )
         return items
@@ -107,7 +111,13 @@ class SubstackPMSource:
         self._write_state(_load_state(self._seen_path))
 
     def _write_state(self, state: dict) -> None:
-        state["last_run_utc"] = datetime.now(timezone.utc).isoformat()
+        # Only advance the clock when nothing was held back. Items dropped by
+        # the per-run cap are the oldest of the batch, so an advanced
+        # last_run_utc would filter every one of them on the next run (see the
+        # internal_date guard in fetch) - silently discarding them despite the
+        # cap deliberately leaving them out of seen_message_ids.
+        if not self._held_back_items:
+            state["last_run_utc"] = datetime.now(timezone.utc).isoformat()
         self._seen_path.parent.mkdir(parents=True, exist_ok=True)
         self._seen_path.write_text(json.dumps(state, indent=2) + "\n")
 

@@ -256,3 +256,46 @@ class TestMarkProcessed:
         src.mark_processed()
         state = json.loads(state_path.read_text())
         assert set(state["seen_message_ids"]) == {"old1", "old2", "new1"}
+
+
+# ── capped runs must not lose the overflow ──────────────────────
+
+
+class TestCapDoesNotDiscardOverflow:
+    """Items dropped by the per-run cap are the OLDEST of the batch.
+
+    fetch() filters anything with internal_date <= last_run_utc, so advancing
+    the clock after a capped run guaranteed the dropped items were discarded
+    forever — despite the cap deliberately leaving them out of
+    seen_message_ids. Regression test for the 2026-09-09 loss of 10
+    newsletters.
+    """
+
+    def _source(self, tmp_path):
+        from src.sources.substack_pm import SubstackPMSource
+        return SubstackPMSource(seen_file_path=tmp_path / "seen.json")
+
+    def test_clock_advances_on_a_normal_run(self, tmp_path):
+        src = self._source(tmp_path)
+        state = {"last_run_utc": "2026-09-01T00:00:00+00:00", "seen_message_ids": []}
+        src._write_state(state)
+        assert state["last_run_utc"] != "2026-09-01T00:00:00+00:00"
+
+    def test_clock_is_held_when_items_were_capped(self, tmp_path):
+        src = self._source(tmp_path)
+        src._held_back_items = True
+        state = {"last_run_utc": "2026-09-01T00:00:00+00:00", "seen_message_ids": []}
+        src._write_state(state)
+        assert state["last_run_utc"] == "2026-09-01T00:00:00+00:00", (
+            "last_run_utc must not advance past items held back by the cap"
+        )
+
+    def test_mark_processed_still_records_kept_ids_when_capped(self, tmp_path):
+        import json
+        src = self._source(tmp_path)
+        src._held_back_items = True
+        src._pending_seen_ids = ["kept1", "kept2"]
+        src.mark_processed()
+        data = json.loads((tmp_path / "seen.json").read_text())
+        assert set(data["seen_message_ids"]) == {"kept1", "kept2"}
+        assert data["last_run_utc"] is None or "2026" in str(data["last_run_utc"])
