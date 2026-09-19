@@ -92,3 +92,61 @@ class TestStripChromeLines:
 
     def test_drops_empty_lines(self):
         assert _strip_chrome_lines("a\n\n\nb") == "a\nb"
+
+
+# ── newsletters that are not on substack.com ───────────────────
+
+
+GHOST_EMAIL = """
+<html><body>
+  <a href="https://www.examplepub.org/r/09af81ff?m=SUBSCRIBER-UUID">Product Talk</a>
+  <a href="https://www.examplepub.org/r/937de553?m=SUBSCRIBER-UUID">Creating Aha! Builder</a>
+  <a href="https://www.examplepub.org/r/64caadaf?m=SUBSCRIBER-UUID">View in browser</a>
+  <a href="https://www.examplepub.org/members/feedback/abc/1/?uuid=SUBSCRIBER-UUID">More like this</a>
+  <a href="https://www.examplepub.org/#/portal/account">Manage subscription</a>
+  <a href="https://www.examplepub.org/unsubscribe/?uuid=SUBSCRIBER-UUID&key=SECRET">Unsubscribe</a>
+  <p>%s</p>
+</body></html>
+""" % ("Body text " * 100)
+
+
+class TestNonSubstackNewsletters:
+    """Half the emails under the Substack/PM label are not Substack at all.
+
+    Product Talk is a Ghost newsletter: every link is a tracking redirect
+    (/r/<hash>?m=<subscriber-uuid>) and no plain post URL appears anywhere.
+    _find_canonical_url returned "" for all of them, which is what put
+    `source_url: ""` in front of the action-items validator on 2026-09-18.
+    """
+
+    def test_uses_the_view_in_browser_link_when_nothing_else_is_available(self):
+        soup = BeautifulSoup(GHOST_EMAIL, "lxml")
+
+        url = _find_canonical_url(soup, GHOST_EMAIL)
+
+        assert url.startswith("https://www.examplepub.org/r/64caadaf")
+
+    def test_strips_the_subscriber_token_from_the_url(self):
+        """These URLs end up in a public repo. The ?m= token identifies Fayad."""
+        soup = BeautifulSoup(GHOST_EMAIL, "lxml")
+
+        url = _find_canonical_url(soup, GHOST_EMAIL)
+
+        assert url == "https://www.examplepub.org/r/64caadaf"
+
+    def test_returns_nothing_rather_than_guess_when_there_is_no_view_in_browser(self):
+        """Better an empty url than a citation pointing at an unsubscribe page."""
+        html = GHOST_EMAIL.replace(
+            '<a href="https://www.examplepub.org/r/64caadaf?m=SUBSCRIBER-UUID">View in browser</a>', ""
+        )
+        soup = BeautifulSoup(html, "lxml")
+
+        assert _find_canonical_url(soup, html) == ""
+
+    def test_a_substack_url_still_wins_over_a_view_in_browser_link(self):
+        html = GHOST_EMAIL.replace(
+            "<p>", '<a href="https://lenny.substack.com/p/real-post">Read</a><p>', 1
+        )
+        soup = BeautifulSoup(html, "lxml")
+
+        assert _find_canonical_url(soup, html) == "https://lenny.substack.com/p/real-post"
