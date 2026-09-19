@@ -16,6 +16,7 @@ from src.config import (
     SUMMARIZE_TEMPERATURE,
 )
 from src._claude_response import first_text_block
+from src.schemas import NEWSLETTER_SUMMARY_SCHEMA
 from src.sources import ContentItem
 
 
@@ -128,8 +129,19 @@ def _call_claude(
     client: anthropic.Anthropic,
     system_prompt: str,
     messages: list[dict],
+    output_schema: dict | None = None,
 ) -> str:
-    """Call Claude API with retries on transient HTTP errors."""
+    """Call Claude API with retries on transient HTTP errors.
+
+    When `output_schema` is given it is passed as `output_config.format`, which
+    constrains the response to valid JSON matching that schema. The parse
+    fallbacks below then only have to handle the unconstrained callers.
+    """
+    extra = (
+        {"output_config": {"format": {"type": "json_schema", "schema": output_schema}}}
+        if output_schema
+        else {}
+    )
     for attempt, delay in enumerate(API_RETRY_DELAYS):
         try:
             response = client.messages.create(
@@ -139,6 +151,7 @@ def _call_claude(
 #                temperature=SUMMARIZE_TEMPERATURE,
                 system=system_prompt,
                 messages=messages,
+                **extra,
             )
             if response.stop_reason == "max_tokens":
                 logger.warning(
@@ -242,10 +255,10 @@ def summarize_one(item: ContentItem, prompt_file: str = "summarize_substack.txt"
     client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
     messages = [{"role": "user", "content": user_message}]
 
-    raw = _call_claude(client, system_prompt, messages)
+    raw = _call_claude(client, system_prompt, messages, output_schema=NEWSLETTER_SUMMARY_SCHEMA)
     parsed = _try_parse_json(raw)
     if parsed and _validate_newsletter_summary(parsed):
-        return parsed
+        return _with_ingested_url(parsed, item)
 
     logger.warning("Invalid summarize_one output for %s — retrying", item_label)
     messages.append({"role": "assistant", "content": raw})
@@ -256,6 +269,21 @@ def summarize_one(item: ContentItem, prompt_file: str = "summarize_substack.txt"
         return parsed
 
     raise ValueError(f"summarize_one failed for {item_label}: last response: {raw[:300]}")
+
+
+def _with_ingested_url(summary: dict, item: ContentItem) -> dict:
+    """The canonical URL comes from the email, not from the model echoing it.
+
+    action_items validates each source_url against the set of summary URLs, so a
+    dropped or altered URL here can fail the whole run — it carried `""` in every
+    bad response on 2026-09-18.
+    """
+    echoed = summary.get("url", "")
+    ingested = item.get("url", "")
+    if echoed != ingested:
+        logger.info("Replacing model-echoed url %r with the ingested %r", echoed, ingested)
+    summary["url"] = ingested
+    return summary
 
 
 def _validate_newsletter_summary(data: dict) -> bool:

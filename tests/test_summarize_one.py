@@ -60,6 +60,37 @@ def _mock_claude(client_cls, response_texts):
     return client
 
 
+class TestSummaryUrlComesFromTheIngestedItem:
+    """The canonical URL is extracted from the Substack email at ingest. The model
+    is asked to echo it and sometimes returns "" or something else; action_items
+    then validates source_url against that set, so a dropped URL can fail the run
+    (2026-09-18, run 35336079576). The ingested value wins."""
+
+    @patch("src.summarize.anthropic.Anthropic")
+    def test_replaces_an_empty_url_echoed_by_the_model(self, anthropic_cls):
+        _mock_claude(anthropic_cls, [_ok_summary_json(url="")])
+
+        result = summarize_one(_content_item(url="https://l.com/p/real"))
+
+        assert result["url"] == "https://l.com/p/real"
+
+    @patch("src.summarize.anthropic.Anthropic")
+    def test_replaces_a_url_the_model_altered(self, anthropic_cls):
+        _mock_claude(anthropic_cls, [_ok_summary_json(url="https://l.com/p/hallucinated")])
+
+        result = summarize_one(_content_item(url="https://l.com/p/real"))
+
+        assert result["url"] == "https://l.com/p/real"
+
+    @patch("src.summarize.anthropic.Anthropic")
+    def test_leaves_the_url_empty_when_ingest_never_found_one(self, anthropic_cls):
+        _mock_claude(anthropic_cls, [_ok_summary_json(url="https://l.com/p/invented")])
+
+        result = summarize_one(_content_item(url=""))
+
+        assert result["url"] == ""
+
+
 class TestSummarizeOne:
     @patch("src.summarize.anthropic.Anthropic")
     def test_returns_valid_summary(self, anthropic_cls):

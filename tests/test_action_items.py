@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from src import _diagnostics as diagnostics
 from src.action_items import (
     generate_action_items,
     load_memory_slices,
@@ -79,6 +80,43 @@ class TestLoadMemorySlices:
                 role_path=tmp_path / "missing.md",
                 projects_path=tmp_path / "missing2.md",
             )
+
+
+class TestRejectedResponsesAreRecorded:
+    """On 2026-09-18 the first attempt failed validation and left no trace, so the
+    cause could not be read back from the failure report. Every rejection is
+    recorded with the reason it was rejected."""
+
+    def setup_method(self):
+        diagnostics.reset()
+
+    @patch("src.action_items.anthropic.Anthropic")
+    def test_records_the_response_when_the_count_is_wrong(self, anthropic_cls, memory_slices):
+        urls = ["https://a.com/p/1"]
+        short = json.dumps({"items": [{
+            "title": "One", "description": "Only item",
+            "source_url": urls[0], "estimated_minutes": 15,
+        }]})
+        _mock_claude(anthropic_cls, [short, _ok_response(urls)])
+
+        generate_action_items([_per_item(urls[0])], _aggregate(), memory_slices)
+
+        recorded = diagnostics.build_report().get("failed_responses")
+        assert any(r["stage"] == "action_items" for r in recorded)
+        assert any("1" in " ".join(r["errors"]) for r in recorded)
+
+    @patch("src.action_items.anthropic.Anthropic")
+    def test_records_the_reason_when_a_source_url_is_not_in_the_newsletters(
+        self, anthropic_cls, memory_slices
+    ):
+        urls = ["https://a.com/p/1"]
+        wrong = _ok_response(["https://elsewhere.com/p/9"])
+        _mock_claude(anthropic_cls, [wrong, _ok_response(urls)])
+
+        generate_action_items([_per_item(urls[0])], _aggregate(), memory_slices)
+
+        recorded = diagnostics.build_report().get("failed_responses")
+        assert any("source_url" in " ".join(r["errors"]) for r in recorded)
 
 
 class TestGenerateActionItems:

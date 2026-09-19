@@ -16,7 +16,9 @@ from src.config import (
     SUMMARIZE_MAX_TOKENS,
     SUMMARIZE_TEMPERATURE,
 )
+from src import _diagnostics as diagnostics
 from src._claude_response import first_text_block
+from src.schemas import action_items_schema
 from src.summarize import AggregateSummary, NewsletterSummary, _try_parse_json
 
 logger = logging.getLogger(__name__)
@@ -40,11 +42,33 @@ def load_memory_slices(
     role_path: Path | None = None,
     projects_path: Path | None = None,
 ) -> dict[str, str]:
-    """Read role.md and projects.md verbatim. Empty file is treated as empty string;
-    missing file raises so the model never receives a silent empty context."""
-    role = (role_path or ROLE_FILE).read_text()
-    projects = (projects_path or PROJECTS_FILE).read_text()
+    """Read role.md and projects.md verbatim.
+
+    A missing file raises. A file with headings but no content warns loudly and
+    continues: it degrades the items to generic PM advice but does not stop the
+    week's episode from publishing.
+    """
+    role_file = role_path or ROLE_FILE
+    projects_file = projects_path or PROJECTS_FILE
+    role = role_file.read_text()
+    projects = projects_file.read_text()
+    for path, text in ((role_file, role), (projects_file, projects)):
+        if not _has_content(text):
+            logger.warning(
+                "%s has headings but no content. action_items.txt asks the model to "
+                "be specific about Fayad and this is where that specificity comes "
+                "from, so the items will be generic. Not fatal: the run continues.",
+                path,
+            )
     return {"role": role, "projects": projects}
+
+
+def _has_content(text: str) -> bool:
+    """True when the file has at least one non-heading, non-blank line."""
+    return any(
+        line.strip() and not line.lstrip().startswith("#")
+        for line in text.splitlines()
+    )
 
 
 def generate_action_items(
@@ -76,7 +100,8 @@ def generate_action_items(
     client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
     messages = [{"role": "user", "content": user_message}]
 
-    raw = _call_claude(client, system_prompt, messages)
+    schema = action_items_schema(ACTION_ITEMS_COUNT)
+    raw = _call_claude(client, system_prompt, messages, output_schema=schema)
     items = _parse_and_validate(raw, valid_urls)
     if items is not None:
         return items
@@ -88,7 +113,7 @@ def generate_action_items(
     ) + system_prompt
     messages.append({"role": "assistant", "content": raw})
     messages.append({"role": "user", "content": "Your previous response failed validation. Try again."})
-    raw = _call_claude(client, stricter_system, messages)
+    raw = _call_claude(client, stricter_system, messages, output_schema=schema)
     items = _parse_and_validate(raw, valid_urls)
     if items is not None:
         return items
@@ -97,35 +122,63 @@ def generate_action_items(
 
 
 def _parse_and_validate(raw: str, valid_urls: set[str]) -> list[ActionItem] | None:
+    """Return the items, or None — recording why the response was rejected.
+
+    A rejection that leaves no trace is what made run 35336079576 unreadable:
+    the first attempt failed and the failure report showed only the retry.
+    """
+    reason = _rejection(raw, valid_urls)
+    if reason is None:
+        return _try_parse_json(raw)["items"]
+    logger.warning("action_items rejected: %s", reason)
+    diagnostics.record_response("action_items", raw, errors=[reason])
+    return None
+
+
+def _rejection(raw: str, valid_urls: set[str]) -> str | None:
+    """The reason this response is unusable, or None when it is usable."""
     parsed = _try_parse_json(raw)
     if not parsed or not isinstance(parsed, dict):
-        return None
+        return "response was not a JSON object"
     items = parsed.get("items")
-    if not isinstance(items, list) or len(items) != ACTION_ITEMS_COUNT:
-        return None
-    for item in items:
+    if not isinstance(items, list):
+        return f"'items' was {type(items).__name__}, not a list"
+    if len(items) != ACTION_ITEMS_COUNT:
+        return f"expected {ACTION_ITEMS_COUNT} items, got {len(items)}"
+    for position, item in enumerate(items, start=1):
         if not isinstance(item, dict):
-            return None
-        for key in ("title", "description", "source_url", "estimated_minutes"):
-            if key not in item:
-                return None
-        if not isinstance(item["title"], str) or not item["title"].strip():
-            return None
-        if not isinstance(item["description"], str) or not item["description"].strip():
-            return None
+            return f"item {position} was {type(item).__name__}, not an object"
+        missing = [
+            key for key in ("title", "description", "source_url", "estimated_minutes")
+            if key not in item
+        ]
+        if missing:
+            return f"item {position} missing keys: {missing}"
+        for key in ("title", "description"):
+            if not isinstance(item[key], str) or not item[key].strip():
+                return f"item {position} has an empty {key}"
         if not isinstance(item["source_url"], str) or item["source_url"] not in valid_urls:
-            return None
+            return (
+                f"item {position} source_url {item['source_url']!r} is not one of this "
+                f"week's {len(valid_urls)} newsletter URLs"
+            )
         mins = item.get("estimated_minutes")
         if not isinstance(mins, int) or not (10 <= mins <= 30):
-            return None
-    return items
+            return f"item {position} estimated_minutes {mins!r} is outside 10-30"
+    return None
 
 
 def _call_claude(
     client: anthropic.Anthropic,
     system_prompt: str,
     messages: list[dict],
+    output_schema: dict | None = None,
 ) -> str:
+    extra = (
+        {"output_config": {"format": {"type": "json_schema", "schema": output_schema}}}
+        if output_schema
+        else {}
+    )
     for attempt, delay in enumerate(API_RETRY_DELAYS):
         try:
             response = client.messages.create(
@@ -135,6 +188,7 @@ def _call_claude(
 #                temperature=SUMMARIZE_TEMPERATURE,  # removed: not accepted by anthropic>=1.1.0
                 system=system_prompt,
                 messages=messages,
+                **extra,
             )
             return first_text_block(response)
         except anthropic.APIStatusError as e:
