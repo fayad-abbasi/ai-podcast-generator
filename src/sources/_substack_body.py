@@ -64,12 +64,45 @@ def _find_canonical_url(soup: BeautifulSoup, html: str) -> str:
     for anchor in soup.find_all("a", href=True):
         href = anchor["href"].strip()
         if _is_substack_url(href) and not _is_chrome_link(href):
-            return href
+            return _strip_tracking(href)
 
+    # Newsletters that are not on Substack at all — Product Talk runs on Ghost,
+    # where every link is a tracking redirect (/r/<hash>?m=<subscriber-uuid>)
+    # and no plain post URL appears anywhere in the email. The "View in
+    # browser" link is the one that resolves to the post.
+    for anchor in soup.find_all("a", href=True):
+        href = anchor["href"].strip()
+        if not href.lower().startswith("http") or _is_chrome_link(href):
+            continue
+        if _VIEW_IN_BROWSER_RE.search(anchor.get_text(" ", strip=True)):
+            return _strip_tracking(href)
+
+    # Deliberately no broader guess: an empty url is honest, while a citation
+    # pointing at an unsubscribe or account page is worse than none.
     return ""
 
 
-_CHROME_PATH_FRAGMENTS = ("/account", "/subscribe", "/profile", "/app", "/redirect")
+def _strip_tracking(href: str) -> str:
+    """Drop the query and fragment.
+
+    Newsletter links carry per-subscriber tokens (?m=, ?uuid=, &key=). These
+    URLs are read aloud in the episode and committed to a public repository,
+    so the token must not travel with them.
+    """
+    return href.split("?", 1)[0].split("#", 1)[0].rstrip("/")
+
+
+_CHROME_PATH_FRAGMENTS = (
+    "/account", "/subscribe", "/profile", "/app", "/redirect",
+    "/unsubscribe", "/members/", "/portal", "/feedback",
+)
+
+# Ghost and Substack both label the canonical link this way in the email chrome.
+_VIEW_IN_BROWSER_RE = re.compile(
+    r"view\s+(this\s+)?(post\s+|email\s+)?(in|on)\s+(the\s+)?(browser|web)"
+    r"|read\s+(this\s+)?online|view\s+online",
+    re.IGNORECASE,
+)
 
 
 def _is_substack_url(href: str) -> bool:
