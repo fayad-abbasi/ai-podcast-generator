@@ -17,6 +17,8 @@ from src.sources._substack_body import BodyTooShort, extract_post
 
 logger = logging.getLogger(__name__)
 
+SEEN_RETENTION_DAYS_DEFAULT = 30
+
 
 class SubstackPMSource:
     name = "substack_pm"
@@ -111,6 +113,7 @@ class SubstackPMSource:
         self._write_state(_load_state(self._seen_path))
 
     def _write_state(self, state: dict) -> None:
+        state = _prune_seen_ids(state)
         # Only advance the clock when nothing was held back. Items dropped by
         # the per-run cap are the oldest of the batch, so an advanced
         # last_run_utc would filter every one of them on the next run (see the
@@ -120,6 +123,50 @@ class SubstackPMSource:
             state["last_run_utc"] = datetime.now(timezone.utc).isoformat()
         self._seen_path.parent.mkdir(parents=True, exist_ok=True)
         self._seen_path.write_text(json.dumps(state, indent=2) + "\n")
+
+
+def _prune_seen_ids(state: dict) -> dict:
+    """Forget message ids once they fall outside `retention_days`.
+
+    The field was written into the state file from the first run and never
+    read: the list had reached 220 ids and grew every week. Ids are stamped
+    with the time they were first persisted; ids written before stamping
+    existed are stamped now rather than dropped.
+
+    Forgetting is safe. A message old enough to be pruned is also older than
+    `last_run_utc`, so the internal_date guard in fetch() filters it before
+    the seen-list is ever consulted.
+    """
+    retention = state.get("retention_days") or SEEN_RETENTION_DAYS_DEFAULT
+    now = datetime.now(timezone.utc)
+    stamps = dict(state.get("seen_at") or {})
+    ids = list(state.get("seen_message_ids") or [])
+
+    for msg_id in ids:
+        stamps.setdefault(msg_id, now.isoformat())
+
+    cutoff = now - timedelta(days=int(retention))
+    kept = [msg_id for msg_id in ids if _stamp_or_now(stamps[msg_id], now) >= cutoff]
+
+    dropped = len(ids) - len(kept)
+    if dropped:
+        logger.info(
+            "substack_pm: pruned %d seen id(s) older than %s days (%d remain)",
+            dropped, retention, len(kept),
+        )
+
+    state["seen_message_ids"] = sorted(kept)
+    state["seen_at"] = {msg_id: stamps[msg_id] for msg_id in sorted(kept)}
+    return state
+
+
+def _stamp_or_now(value: str, now: datetime) -> datetime:
+    """An unreadable stamp keeps the id rather than silently discarding it."""
+    try:
+        parsed = datetime.fromisoformat(value)
+    except (TypeError, ValueError):
+        return now
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
 
 
 def _load_state(path: Path) -> dict:
