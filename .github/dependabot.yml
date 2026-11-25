@@ -11,9 +11,26 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
+    groups:
+      # anthropic gets its own PR: requirements.txt pins it to one minor
+      # range, so each bump needs a deliberate review.
+      anthropic:
+        patterns:
+          - "anthropic"
+      # Everything else arrives as one weekly PR, so bumps to neighbouring
+      # lines in requirements.txt stop conflicting with each other.
+      pip-routine:
+        patterns:
+          - "*"
+        exclude-patterns:
+          - "anthropic"
 
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
+    groups:
+      actions:
+        patterns:
+          - "*"
